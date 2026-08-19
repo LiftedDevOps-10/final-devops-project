@@ -47,6 +47,10 @@ A Java web application built with:
 - Ansible
 - AWS
 
+## Development Environment
+
+The project is developed and tested locally using WSL2, Docker and VS Code.
+
 ## Current Architecture
 
 ```LiftedDevOps-10
