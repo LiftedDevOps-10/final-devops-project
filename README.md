@@ -1,10 +1,40 @@
 # DevOps Modern End-to-End Deployment
 
-## Project Overview
+![Docker](https://img.shields.io/badge/Docker-Containerized-blue)
+![Java](https://img.shields.io/badge/Java-21-orange)
+![Maven](https://img.shields.io/badge/Maven-Build-red)
+![Terraform](https://img.shields.io/badge/Terraform-IaC-purple)
+![Ansible](https://img.shields.io/badge/Ansible-Automation-black)
+![Jenkins](https://img.shields.io/badge/Jenkins-CI%2FCD-red)
 
-This project demonstrates an end-to-end DevOps workflow using:
+## Overview
 
-- Linux/WSL
+This project demonstrates an end-to-end DevOps workflow for deploying and managing multiple applications.
+
+The project combines containerization, source control, infrastructure as code, configuration management and CI/CD automation.
+
+## Applications
+
+### Portfolio Web Application
+
+A responsive portfolio website built with:
+
+- HTML
+- CSS
+- Nginx
+- Docker
+
+### Java Application
+
+A Java web application built with:
+
+- Java 21
+- Maven
+- Docker
+
+## DevOps Technologies
+
+- Linux / WSL2
 - Git
 - GitHub
 - Docker
@@ -13,18 +43,32 @@ This project demonstrates an end-to-end DevOps workflow using:
 - Maven
 - Jenkins
 - SonarQube
-- Ansible
 - Terraform
+- Ansible
 - AWS
 
-## Applications
+## Current Architecture
 
-### Portfolio Web Application
-HTML/CSS based portfolio application.
-
-### Java Application
-Java/Maven application containerized with Docker.
-
-## DevOps Pipeline
-
-GitHub → Jenkins → Build → Test → Code Quality → Docker → Deployment
+```LiftedDevOps-10
+                    GitHub
+                       |
+                       v
+                    Jenkins
+                       |
+             +---------+---------+
+             |                   |
+             v                   v
+       Portfolio App          Java App
+             |                   |
+             v                   v
+           Docker              Docker
+             |                   |
+             +---------+---------+
+                       |
+                       v
+                Docker Compose
+                       |
+             +---------+---------+
+             |                   |
+             v                   v
+        localhost:8082      localhost:8081
