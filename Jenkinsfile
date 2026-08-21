@@ -6,7 +6,7 @@ pipeline {
         JAVA_HOME = '/usr/lib/jvm/java-21-amazon-corretto.x86_64'
         PATH = "${JAVA_HOME}/bin:${PATH}"
     }
-    
+
     stages {
 
         stage('Checkout') {
@@ -62,15 +62,12 @@ pipeline {
         }
 
 
-        stage('Deploy Applications') {
-
-            steps {
-
-                echo 'Starting applications...'
-
-                sh 'docker compose up -d'
-            }
-        }
+       stage('Deploy Applications') {
+           steps {
+               sh 'docker compose down || true'
+               sh 'docker compose up -d'
+           }
+       } 
 
 
         stage('Verify Deployment') {
