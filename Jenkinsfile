@@ -2,113 +2,73 @@ pipeline {
 
     agent any
 
-    environment {
-        JAVA_HOME = '/usr/lib/jvm/java-21-amazon-corretto.x86_64'
-        PATH = "${JAVA_HOME}/bin:${PATH}"
-    }
-
     stages {
 
         stage('Checkout') {
-
             steps {
-
                 echo 'Checking out source code...'
-
                 checkout scm
             }
         }
 
-
-        stage('Verify Environment') {
-
+        stage('Verify Jenkins Environment') {
             steps {
-
-                echo 'Checking build environment...'
+                echo 'Checking Jenkins environment...'
 
                 sh 'java --version'
-
                 sh 'mvn --version'
-
                 sh 'docker --version'
-
-                sh 'docker compose version'
             }
         }
 
-
-        stage('Build Java Application') {
-
+        stage('Deploy to EC2') {
             steps {
+                echo 'Deploying application to Terraform EC2...'
 
-                echo 'Building Java application with Maven...'
-
-                dir('java-app') {
-
-                    sh 'mvn clean package'
-                }
+                sh '''
+                    ssh -i /var/lib/jenkins/devproject-key.pem \
+                    -o StrictHostKeyChecking=no \
+                    ec2-user@16.171.237.164 \
+                    "
+                    cd /home/ec2-user/final-devops-project &&
+                    git pull origin main &&
+                    docker-compose down || true &&
+                    docker-compose up -d --build
+                    "
+                '''
             }
         }
-
-
-        stage('Build Docker Images') {
-
-            steps {
-
-                echo 'Building Docker images...'
-
-                sh 'docker compose build'
-            }
-        }
-
-
-       stage('Deploy Applications') {
-           steps {
-               sh 'docker compose down || true'
-               sh 'docker compose up -d'
-           }
-       } 
-
 
         stage('Verify Deployment') {
-
             steps {
+                echo 'Checking applications on EC2...'
 
-                echo 'Checking running containers...'
-
-                sh 'docker compose ps'
+                sh '''
+                    ssh -i /var/lib/jenkins/devproject-key.pem \
+                    -o StrictHostKeyChecking=no \
+                    ec2-user@16.171.237.164 \
+                    "docker ps"
+                '''
             }
         }
-
     }
-
 
     post {
 
         success {
-
             echo '======================================'
-
             echo 'CI/CD PIPELINE COMPLETED SUCCESSFULLY'
-
             echo '======================================'
         }
-
 
         failure {
-
             echo '======================================'
-
             echo 'CI/CD PIPELINE FAILED'
-
             echo 'Check the Jenkins console output.'
-
             echo '======================================'
         }
 
-
         always {
-
             echo 'Pipeline execution completed.'
         }
     }
