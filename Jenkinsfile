@@ -18,10 +18,70 @@ pipeline {
                 sh 'java --version'
                 sh 'mvn --version'
                 sh 'docker --version'
+                sh 'terraform --version'
+                sh 'ansible --version'
+                sh 'ssh -V'
             }
         }
 
-        stage('Deploy to EC2') {
+        stage('Terraform Init') {
+            steps {
+                echo 'Initializing Terraform...'
+
+                sh '''
+                    cd terraform
+                    terraform init
+                '''
+            }
+        }
+
+        stage('Terraform Validate') {
+            steps {
+                echo 'Validating Terraform configuration...'
+
+                sh '''
+                    cd terraform
+                    terraform validate
+                '''
+            }
+        }
+
+        stage('Terraform Plan') {
+            steps {
+                echo 'Creating Terraform execution plan...'
+
+                sh '''
+                    cd terraform
+                    terraform plan -out=tfplan
+                '''
+            }
+        }
+
+        stage('Terraform Apply') {
+            steps {
+                echo 'Provisioning AWS infrastructure with Terraform...'
+
+                sh '''
+                    cd terraform
+                    terraform apply -auto-approve tfplan
+                '''
+            }
+        }
+
+        stage('Ansible Configure EC2') {
+            steps {
+                echo 'Configuring EC2 server with Ansible...'
+
+                sh '''
+                    ansible-playbook \
+                    -i ansible/inventory.ini \
+                    ansible/deploy.yml \
+                    --private-key /var/lib/jenkins/devproject-key.pem
+                '''
+            }
+        }
+
+        stage('Deploy Application') {
             steps {
                 echo 'Deploying application to Terraform EC2...'
 
