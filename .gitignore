@@ -2,7 +2,14 @@
 .terraform/
 *.tfstate
 *.tfstate.*
+tfplan
+*.tfplan
 crash.log
+terraform-debug.log
+plan-debug.log
+
+# Ansible
+ansible/inventory.ini
 
 # Java/Maven
 target/
@@ -12,11 +19,3 @@ target/
 .env
 *.pem
 *.key
-
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db

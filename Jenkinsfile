@@ -15,12 +15,13 @@ pipeline {
             steps {
                 echo 'Checking Jenkins environment...'
 
-                sh 'java --version'
-                sh 'mvn --version'
-                sh 'docker --version'
-                sh 'terraform --version'
-                sh 'ansible --version'
-                sh 'ssh -V'
+                sh '''
+                    java --version
+                    mvn --version
+                    docker --version
+                    terraform version
+                    ansible --version
+                '''
             }
         }
 
@@ -59,7 +60,7 @@ pipeline {
 
         stage('Terraform Apply') {
             steps {
-                echo 'Provisioning AWS infrastructure with Terraform...'
+                echo 'Applying Terraform infrastructure...'
 
                 sh '''
                     cd terraform
@@ -68,33 +69,56 @@ pipeline {
             }
         }
 
-        stage('Ansible Configure EC2') {
+        stage('Get EC2 IP') {
             steps {
-                echo 'Configuring EC2 server with Ansible...'
+                script {
+                    env.EC2_IP = sh(
+                        script: 'cd terraform && terraform output -raw ec2_public_ip',
+                        returnStdout: true
+                    ).trim()
+
+                    echo "Terraform EC2 Public IP: ${env.EC2_IP}"
+                }
+            }
+        }
+
+        stage('Generate Ansible Inventory') {
+            steps {
+                echo 'Generating dynamic Ansible inventory...'
 
                 sh '''
-                    ansible-playbook \
-                    -i ansible/inventory.ini \
-                    ansible/deploy.yml \
-                    --private-key /var/lib/jenkins/devproject-key.pem
+                    cat > ansible/inventory.ini <<EOF
+[webserver]
+terraform_ec2 ansible_host=${EC2_IP}
+
+[webserver:vars]
+ansible_user=ec2-user
+ansible_ssh_private_key_file=/var/lib/jenkins/devproject-key.pem
+EOF
                 '''
             }
         }
 
-        stage('Deploy Application') {
+        stage('Ansible Ping') {
             steps {
-                echo 'Deploying application to Terraform EC2...'
+                echo 'Testing Ansible connection to EC2...'
 
                 sh '''
-                    ssh -i /var/lib/jenkins/devproject-key.pem \
-                    -o StrictHostKeyChecking=no \
-                    ec2-user@16.171.237.164 \
-                    "
-                    cd /home/ec2-user/final-devops-project &&
-                    git pull origin main &&
-                    docker-compose down || true &&
-                    docker-compose up -d --build
-                    "
+                    ansible webserver \
+                    -i ansible/inventory.ini \
+                    -m ping
+                '''
+            }
+        }
+
+        stage('Ansible Deploy') {
+            steps {
+                echo 'Configuring EC2 and deploying applications with Ansible...'
+
+                sh '''
+                    ansible-playbook \
+                    -i ansible/inventory.ini \
+                    ansible/deploy.yml
                 '''
             }
         }
@@ -106,7 +130,7 @@ pipeline {
                 sh '''
                     ssh -i /var/lib/jenkins/devproject-key.pem \
                     -o StrictHostKeyChecking=no \
-                    ec2-user@16.171.237.164 \
+                    ec2-user@${EC2_IP} \
                     "docker ps"
                 '''
             }
@@ -116,16 +140,20 @@ pipeline {
     post {
 
         success {
-            echo '======================================'
-            echo 'CI/CD PIPELINE COMPLETED SUCCESSFULLY'
-            echo '======================================'
+            echo '''
+========================================
+CI/CD PIPELINE COMPLETED SUCCESSFULLY
+========================================
+'''
         }
 
         failure {
-            echo '======================================'
-            echo 'CI/CD PIPELINE FAILED'
-            echo 'Check the Jenkins console output.'
-            echo '======================================'
+            echo '''
+========================================
+CI/CD PIPELINE FAILED
+========================================
+Check the Jenkins console output.
+'''
         }
 
         always {

@@ -1,6 +1,0 @@
-[webserver]
-terraform_ec2 ansible_host=16.171.237.164
-
-[webserver:vars]
-ansible_user=ec2-user
-ansible_ssh_private_key_file=/home/lifted/devproject-key.pem
