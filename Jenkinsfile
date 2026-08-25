@@ -2,136 +2,247 @@ pipeline {
 
     agent any
 
+    environment {
+        AWS_DEFAULT_REGION = 'eu-north-1'
+        AWS_REGION         = 'eu-north-1'
+
+        TERRAFORM_DIR      = 'terraform'
+        ANSIBLE_DIR        = 'ansible'
+
+        ANSIBLE_PLAYBOOK   = 'deploy.yml'
+        ANSIBLE_INVENTORY  = 'inventory.ini'
+    }
+
     stages {
 
         stage('Checkout') {
             steps {
-                echo 'Checking out source code...'
+                echo '=== CHECKOUT ==='
+
                 checkout scm
+
+                sh '''
+                    echo "Current directory:"
+                    pwd
+
+                    echo "Project files:"
+                    ls -la
+                '''
             }
         }
 
-        stage('Verify Jenkins Environment') {
+        stage('Verify Tools') {
             steps {
-                echo 'Checking Jenkins environment...'
+                echo '=== VERIFY TOOLS ==='
 
                 sh '''
-                    java --version
-                    mvn --version
-                    docker --version
+                    set -e
+
+                    echo "Terraform:"
                     terraform version
-                    ansible --version
+
+                    echo ""
+                    echo "AWS CLI:"
+                    aws --version
+
+                    echo ""
+                    echo "Ansible:"
+                    /var/lib/jenkins/.local/bin/ansible --version
+
+                    echo ""
+                    echo "Ansible Playbook:"
+                    /var/lib/jenkins/.local/bin/ansible-playbook --version
+
+                    echo ""
+                    echo "Docker:"
+                    docker --version
+
+                    echo ""
+                    echo "Docker Compose:"
+                    docker-compose --version
+
+                    echo ""
+                    echo "AWS Identity:"
+                    aws sts get-caller-identity
                 '''
             }
         }
 
         stage('Terraform Init') {
             steps {
-                echo 'Initializing Terraform...'
+                echo '=== TERRAFORM INIT ==='
 
-                sh '''
-                    cd terraform
-                    terraform init
-                '''
-            }
-        }
+                dir("${TERRAFORM_DIR}") {
+                    sh '''
+                        set -e
 
-        stage('Terraform Validate') {
-            steps {
-                echo 'Validating Terraform configuration...'
-
-                sh '''
-                    cd terraform
-                    terraform validate
-                '''
+                        terraform init
+                    '''
+                }
             }
         }
 
         stage('Terraform Plan') {
             steps {
-                echo 'Creating Terraform execution plan...'
+                echo '=== TERRAFORM PLAN ==='
 
-                sh '''
-                    cd terraform
-                    terraform plan -out=tfplan
-                '''
-            }
-        }
+                dir("${TERRAFORM_DIR}") {
+                    sh '''
+                        set -e
 
-        stage('Terraform Apply') {
-            steps {
-                echo 'Applying Terraform infrastructure...'
-
-                sh '''
-                    cd terraform
-                    terraform apply -auto-approve tfplan
-                '''
-            }
-        }
-
-        stage('Get EC2 IP') {
-            steps {
-                script {
-                    env.EC2_IP = sh(
-                        script: 'cd terraform && terraform output -raw ec2_public_ip',
-                        returnStdout: true
-                    ).trim()
-
-                    echo "Terraform EC2 Public IP: ${env.EC2_IP}"
+                        terraform plan -out=tfplan
+                    '''
                 }
             }
         }
 
-        stage('Generate Ansible Inventory') {
+        stage('Terraform Approval') {
             steps {
-                echo 'Generating dynamic Ansible inventory...'
+                timeout(time: 10, unit: 'MINUTES') {
+                    input message: 'Terraform plan is ready. Do you want to apply these   changes?', 
+                          ok: 'Apply Terraform'
+               }
+           }
+        }
 
-                sh '''
-                    cat > ansible/inventory.ini <<EOF
+        stage('Terraform Apply') {
+            steps {
+                echo '=== TERRAFORM APPLY ==='
+
+                dir("${TERRAFORM_DIR}") {
+                    sh '''
+                        set -e
+
+                        terraform apply tfplan
+                   '''
+              }
+          }
+        }
+
+        stage('Get Public IP') {
+            steps {
+                echo '=== GET EC2 PUBLIC IP ==='
+
+                script {
+
+                    env.EC2_PUBLIC_IP = sh(
+                        script: '''
+                            cd terraform
+                            terraform output -raw ec2_public_ip
+                        ''',
+                        returnStdout: true
+                    ).trim()
+
+                    echo "EC2 Public IP: ${env.EC2_PUBLIC_IP}"
+
+                    if (!env.EC2_PUBLIC_IP) {
+                        error('Terraform did not return an EC2 public IP.')
+                    }
+                }
+            }
+        }
+
+        stage('Create Dynamic Ansible Inventory') {
+            steps {
+                echo '=== CREATE DYNAMIC ANSIBLE INVENTORY ==='
+
+                dir("${ANSIBLE_DIR}") {
+                    sh """
+                        set -e
+
+                        cat > ${ANSIBLE_INVENTORY} <<EOF
 [webserver]
-terraform_ec2 ansible_host=${EC2_IP}
+terraform_ec2 ansible_host=${EC2_PUBLIC_IP}
 
 [webserver:vars]
 ansible_user=ec2-user
 ansible_ssh_private_key_file=/var/lib/jenkins/devproject-key.pem
 EOF
+
+                        echo "Generated inventory:"
+                        cat ${ANSIBLE_INVENTORY}
+                    """
+                }
+            }
+        }
+
+        stage('Wait for SSH') {
+            steps {
+                echo '=== WAIT FOR EC2 SSH ==='
+
+                sh '''
+                    set -e
+
+                    echo "Waiting for SSH on ${EC2_PUBLIC_IP}..."
+
+                    for i in $(seq 1 12); do
+
+                        if ssh \
+                            -i /var/lib/jenkins/devproject-key.pem \
+                            -o StrictHostKeyChecking=no \
+                            -o ConnectTimeout=5 \
+                            ec2-user@${EC2_PUBLIC_IP} "echo SSH_READY" 2>/dev/null
+                        then
+                            echo "SSH is ready."
+                            exit 0
+                        fi
+
+                        echo "SSH not ready yet. Attempt $i/12..."
+                        sleep 10
+                    done
+
+                    echo "ERROR: SSH connection could not be established."
+                    exit 1
                 '''
             }
         }
 
-        stage('Ansible Ping') {
+        stage('Ansible Deployment') {
             steps {
-                echo 'Testing Ansible connection to EC2...'
+                echo '=== ANSIBLE DEPLOYMENT ==='
 
-                sh '''
-                    ansible webserver \
-                    -i ansible/inventory.ini \
-                    -m ping
-                '''
+                dir("${ANSIBLE_DIR}") {
+                    sh '''
+                        set -e
+
+                        /var/lib/jenkins/.local/bin/ansible-playbook \
+                            -i inventory.ini \
+                            deploy.yml
+                    '''
+                }
             }
         }
 
-        stage('Ansible Deploy') {
+        stage('Docker Verification') {
             steps {
-                echo 'Configuring EC2 and deploying applications with Ansible...'
+                echo '=== DOCKER VERIFICATION ==='
 
                 sh '''
-                    ansible-playbook \
-                    -i ansible/inventory.ini \
-                    ansible/deploy.yml
-                '''
-            }
-        }
+                    set -e
 
-        stage('Verify Deployment') {
-            steps {
-                echo 'Checking applications on EC2...'
+                    echo "Checking Docker on EC2..."
 
-                sh '''
-                    ssh -i /var/lib/jenkins/devproject-key.pem \
-                    -o StrictHostKeyChecking=no \
-                    ec2-user@${EC2_IP} \
-                    "docker ps"
+                    ssh \
+                        -i /var/lib/jenkins/devproject-key.pem \
+                        -o StrictHostKeyChecking=no \
+                        ec2-user@${EC2_PUBLIC_IP} <<'EOF'
+
+                    echo "=== Docker Version ==="
+                    docker --version
+
+                    echo ""
+                    echo "=== Docker Compose Version ==="
+                    docker-compose --version
+
+                    echo ""
+                    echo "=== Running Containers ==="
+                    sudo docker ps
+
+                    echo ""
+                    echo "=== Project Directory ==="
+                    ls -la ~/final-devops-project
+
+                    EOF
                 '''
             }
         }
@@ -140,24 +251,47 @@ EOF
     post {
 
         success {
-            echo '''
-========================================
-CI/CD PIPELINE COMPLETED SUCCESSFULLY
-========================================
-'''
+            echo """
+            ==========================================
+                    DEPLOYMENT SUCCESSFUL
+            ==========================================
+
+            EC2 Public IP:
+            ${env.EC2_PUBLIC_IP}
+
+            Terraform:
+            SUCCESS
+
+            Ansible:
+            SUCCESS
+
+            Docker:
+            VERIFIED
+
+            ==========================================
+            """
         }
 
         failure {
-            echo '''
-========================================
-CI/CD PIPELINE FAILED
-========================================
-Check the Jenkins console output.
-'''
+            echo """
+            ==========================================
+                    DEPLOYMENT FAILED
+            ==========================================
+
+            Check the failed stage above.
+
+            ==========================================
+            """
         }
 
         always {
-            echo 'Pipeline execution completed.'
+            echo 'Pipeline completed.'
+
+            sh '''
+                echo "Cleaning temporary Terraform plan..."
+
+                rm -f terraform/tfplan || true
+            '''
         }
     }
 }
