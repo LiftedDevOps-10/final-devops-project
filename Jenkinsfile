@@ -59,7 +59,7 @@ pipeline {
 
                     echo ""
                     echo "Docker Compose:"
-                    docker-compose --version
+                    docker compose version
 
                     echo ""
                     echo "AWS Identity:"
@@ -232,7 +232,7 @@ EOF
 
                     echo ""
                     echo "=== Docker Compose Version ==="
-                    docker-compose --version
+                    docker compose version
 
                     echo ""
                     echo "=== Running Containers ==="
