@@ -35,10 +35,12 @@ jobs:
           mvn --version
 
       - name: Build Java Application
+        working-directory: java-app
         run: |
           mvn clean package -DskipTests
 
       - name: Run Tests
+        working-directory: java-app
         run: |
           mvn test
 
