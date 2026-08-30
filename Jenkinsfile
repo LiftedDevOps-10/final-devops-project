@@ -1,7 +1,3 @@
-ewc-jomf-fxe
-
-Akeem Oyebanji (profAkymbo)
-4:32 PM
 pipeline {
 
     agent any
