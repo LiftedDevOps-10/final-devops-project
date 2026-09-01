@@ -99,11 +99,11 @@ jobs:
       - build
       - docker
 
-    # Run Terraform when:
-    # 1. Code is pushed to main
-    # 2. Workflow is manually started
+    # Terraform runs when:
+    # - Code is pushed to main
+    # - Workflow is manually started
     #
-    # Do NOT run Terraform for pull requests.
+    # Terraform does NOT run on pull requests.
 
     if: >
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
@@ -114,11 +114,16 @@ jobs:
 
     steps:
 
+      # ------------------------------------------------------
+      # CHECKOUT
+      # ------------------------------------------------------
+
       - name: Checkout Code
         uses: actions/checkout@v5
 
+
       # ------------------------------------------------------
-      # AWS CREDENTIALS
+      # CONFIGURE AWS CREDENTIALS
       # ------------------------------------------------------
 
       - name: Configure AWS Credentials
@@ -128,45 +133,76 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: eu-north-1
 
+
       # ------------------------------------------------------
-      # VERIFY AWS
+      # VERIFY AWS CREDENTIALS
       # ------------------------------------------------------
 
       - name: Verify AWS Identity
         run: |
           echo "Checking AWS credentials..."
+          aws configure list
+
+          echo "Checking AWS caller identity..."
           aws sts get-caller-identity
 
+
       # ------------------------------------------------------
-      # TERRAFORM
+      # SETUP TERRAFORM
       # ------------------------------------------------------
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+
+      # ------------------------------------------------------
+      # TERRAFORM VERSION
+      # ------------------------------------------------------
+
       - name: Terraform Version
         run: |
           terraform version
+
+
+      # ------------------------------------------------------
+      # TERRAFORM INIT
+      # ------------------------------------------------------
 
       - name: Terraform Init
         working-directory: terraform
         run: |
           terraform init
 
+
+      # ------------------------------------------------------
+      # TERRAFORM VALIDATE
+      # ------------------------------------------------------
+
       - name: Terraform Validate
         working-directory: terraform
         run: |
           terraform validate
+
+
+      # ------------------------------------------------------
+      # TERRAFORM PLAN
+      # ------------------------------------------------------
 
       - name: Terraform Plan
         working-directory: terraform
         run: |
           terraform plan -out=tfplan
 
+
+      # ------------------------------------------------------
+      # TERRAFORM APPLY
+      # ------------------------------------------------------
+
       - name: Terraform Apply
         working-directory: terraform
         run: |
           terraform apply -auto-approve tfplan
+
 
       # ------------------------------------------------------
       # GET EC2 PUBLIC IP
@@ -176,6 +212,7 @@ jobs:
         id: tf_output
         working-directory: terraform
         run: |
+
           EC2_IP=$(terraform output -raw ec2_public_ip)
 
           echo "=============================================="
@@ -198,8 +235,13 @@ jobs:
 
     steps:
 
+      # ------------------------------------------------------
+      # CHECKOUT
+      # ------------------------------------------------------
+
       - name: Checkout Code
         uses: actions/checkout@v5
+
 
       # ------------------------------------------------------
       # INSTALL ANSIBLE
@@ -209,9 +251,15 @@ jobs:
         run: |
           python3 -m pip install --user ansible
 
+
+      # ------------------------------------------------------
+      # VERIFY ANSIBLE
+      # ------------------------------------------------------
+
       - name: Verify Ansible
         run: |
           ansible --version
+
 
       # ------------------------------------------------------
       # SETUP SSH KEY
@@ -219,11 +267,13 @@ jobs:
 
       - name: Setup SSH Key
         run: |
+
           mkdir -p ~/.ssh
 
           echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/ec2-key.pem
 
           chmod 600 ~/.ssh/ec2-key.pem
+
 
       # ------------------------------------------------------
       # CREATE DYNAMIC ANSIBLE INVENTORY
@@ -242,6 +292,7 @@ jobs:
           echo "=============================================="
 
           cat ansible/inventory.ini
+
 
       # ------------------------------------------------------
       # WAIT FOR EC2 SSH
@@ -262,11 +313,13 @@ jobs:
               "echo EC2 SSH is ready"; then
 
               echo "EC2 SSH is ready."
+
               exit 0
 
             fi
 
             echo "Attempt $i/30 failed."
+
             echo "Waiting 10 seconds..."
 
             sleep 10
@@ -276,6 +329,7 @@ jobs:
           echo "EC2 SSH connection failed."
 
           exit 1
+
 
       # ------------------------------------------------------
       # TEST ANSIBLE CONNECTION
@@ -288,8 +342,9 @@ jobs:
             -i ansible/inventory.ini \
             -m ping
 
+
       # ------------------------------------------------------
-      # RUN ANSIBLE
+      # RUN ANSIBLE DEPLOYMENT
       # ------------------------------------------------------
 
       - name: Run Ansible Deployment
@@ -299,8 +354,9 @@ jobs:
             -i ansible/inventory.ini \
             ansible/deploy.yml
 
+
       # ------------------------------------------------------
-      # CHECK DOCKER
+      # CHECK DOCKER CONTAINERS
       # ------------------------------------------------------
 
       - name: Check Docker Containers
@@ -311,6 +367,7 @@ jobs:
             -o StrictHostKeyChecking=no \
             ec2-user@${{ needs.terraform.outputs.ec2_ip }} \
             "docker ps"
+
 
       # ------------------------------------------------------
       # CHECK PORTFOLIO APPLICATION
@@ -325,6 +382,7 @@ jobs:
             ec2-user@${{ needs.terraform.outputs.ec2_ip }} \
             "curl -f http://localhost:8082"
 
+
       # ------------------------------------------------------
       # CHECK JAVA APPLICATION
       # ------------------------------------------------------
@@ -338,8 +396,9 @@ jobs:
             ec2-user@${{ needs.terraform.outputs.ec2_ip }} \
             "curl -f http://localhost:8081"
 
+
       # ------------------------------------------------------
-      # CLEAN SSH KEY
+      # CLEANUP SSH KEY
       # ------------------------------------------------------
 
       - name: Cleanup SSH Key
